@@ -35,7 +35,7 @@ bot = commands.Bot(
 # DATABASE
 # =========================================================
 
-DATABASE_NAME = "eko_transport.db"
+DATABASE_NAME = "/tmp/eko_transport.db"
 
 
 def connect():
