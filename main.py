@@ -243,42 +243,32 @@ async def route(ctx: commands.Context):
     )
 
 
+
 # =========================================================
 # !DRIVE
 # =========================================================
 
 @bot.command()
-async def drive(
-    ctx: commands.Context,
-    destination=None
-):
+async def drive(ctx: commands.Context, destination=None):
 
     user_id = ctx.author.id
 
     if destination is None:
-
         await ctx.send(
             "🚗 **DRIVE**\n\n"
-
             "Please provide a destination.\n\n"
-
             "Example:\n"
             "`!drive mainland`"
         )
-
         return
 
     destination = destination.lower()
 
     if destination not in LOCATIONS:
-
         await ctx.send(
             "❌ **DESTINATION NOT FOUND**\n\n"
-
-            f"`{destination}` is not a registered "
-            "Èko location."
+            f"`{destination}` is not a registered Èko location."
         )
-
         return
 
     current_location = get_player_location(user_id)
@@ -286,113 +276,99 @@ async def drive(
     if current_location is None:
 
         if ctx.channel.name in LOCATIONS:
-
             current_location = ctx.channel.name
-
-            set_player_location(
-                user_id,
-                current_location
-            )
+            set_player_location(user_id, current_location)
 
         else:
-
             await ctx.send(
                 "📍 I don't know your current location yet."
             )
-
             return
 
     if current_location == destination:
-
         await ctx.send(
-            f"📍 You are already at "
-            f"{LOCATIONS[destination]}."
+            f"📍 You are already at {LOCATIONS[destination]}."
         )
-
         return
 
-    route_key = (
-        current_location,
-        destination
-    )
+    route_key = (current_location, destination)
 
     if route_key not in ROUTES:
-
         await ctx.send(
             "🚧 **NO DIRECT ROUTE**\n\n"
-
-            f"There is currently no direct route "
-            f"from {LOCATIONS[current_location]} "
-
+            f"There is currently no direct route from "
+            f"{LOCATIONS[current_location]} "
             f"to {LOCATIONS[destination]}."
         )
-
         return
 
     route_data = ROUTES[route_key]
 
     distance = route_data["distance"]
-
     travel_time = route_data["time"]
 
-    await ctx.send(
+    vehicle = get_vehicle(user_id)
 
+    if vehicle is None:
+        create_vehicle(user_id)
+        vehicle = get_vehicle(user_id)
+
+    vehicle_name, current_fuel, fuel_capacity = vehicle
+
+    fuel_used = distance * 0.5
+
+    if current_fuel < fuel_used:
+        await ctx.send(
+            "⛽ **NOT ENOUGH FUEL**\n\n"
+            f"🚗 Vehicle: **{vehicle_name}**\n"
+            f"⛽ Current fuel: **{current_fuel:.1f}L**\n"
+            f"⛽ Required fuel: **{fuel_used:.1f}L**\n\n"
+            "Please refuel before travelling."
+        )
+        return
+
+    remaining_fuel = current_fuel - fuel_used
+
+    update_fuel(user_id, remaining_fuel)
+
+    await ctx.send(
         "🚗 **JOURNEY STARTED**\n"
         "════════════════════\n\n"
-
-        f"📍 From: "
-        f"{LOCATIONS[current_location]}\n"
-
-        f"📍 To: "
-        f"{LOCATIONS[destination]}\n\n"
-
-        f"🛣️ Distance: "
-        f"{distance} km\n"
-
-        f"⏱️ Travel Time: "
-        f"{travel_time} seconds\n\n"
-
+        f"📍 From: {LOCATIONS[current_location]}\n"
+        f"📍 To: {LOCATIONS[destination]}\n\n"
+        f"🚗 Vehicle: {vehicle_name}\n"
+        f"🛣️ Distance: {distance} km\n"
+        f"⛽ Fuel used: {fuel_used:.1f}L\n"
+        f"⛽ Remaining fuel: {remaining_fuel:.1f}L\n"
+        f"⏱️ Travel Time: {travel_time} seconds\n\n"
         "🚗 You are now travelling..."
     )
 
     await asyncio.sleep(travel_time)
 
-    set_player_location(
-    user_id,
-    destination
-)
+    set_player_location(user_id, destination)
 
-# Find the destination Discord channel
-destination_channel = discord.utils.get(
-    ctx.guild.text_channels,
-    name=destination
-)
-
-if destination_channel is None:
-
-    await ctx.send(
-        "⚠️ **ARRIVAL CHANNEL NOT FOUND**\n\n"
-        f"The destination `{destination}` is registered "
-        "in the transport system, but I cannot find "
-        "the Discord channel.\n\n"
-        "Your location has still been updated."
+    destination_channel = discord.utils.get(
+        ctx.guild.text_channels,
+        name=destination
     )
 
-    return
+    if destination_channel is None:
+        await ctx.send(
+            "⚠️ **ARRIVAL CHANNEL NOT FOUND**\n\n"
+            f"I could not find `#{destination}`.\n\n"
+            "Your game location has still been updated."
+        )
+        return
 
-
-await destination_channel.send(
-
-    "✅ **ARRIVAL CONFIRMED**\n"
-    "════════════════════\n\n"
-
-    f"🚗 {ctx.author.mention} "
-    "has arrived at:\n\n"
-
-    f"**{LOCATIONS[destination]}**\n\n"
-
-    "📍 Your current location has been updated."
-)
+    await destination_channel.send(
+        "✅ **ARRIVAL CONFIRMED**\n"
+        "════════════════════\n\n"
+        f"🚗 {ctx.author.mention} has arrived at:\n\n"
+        f"**{LOCATIONS[destination]}**\n\n"
+        f"⛽ Fuel remaining: **{remaining_fuel:.1f}L**\n\n"
+        "📍 Your current location has been updated."
+    )
 
 
 # =========================================================
