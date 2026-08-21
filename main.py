@@ -30,137 +30,49 @@ bot = commands.Bot(
     intents=intents
 )
 
-
 # =========================================================
-# DATABASE
+# TEMPORARY GAME DATA
 # =========================================================
 
-DATABASE_NAME = "/tmp/eko_transport.db"
-
-
-def connect():
-    return sqlite3.connect(DATABASE_NAME)
-
-
-def setup_database():
-
-    connection = connect()
-    cursor = connection.cursor()
-
-    # Player locations
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS players (
-            user_id INTEGER PRIMARY KEY,
-            location TEXT NOT NULL
-        )
-    """)
-
-    # Player vehicles
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS vehicles (
-            user_id INTEGER PRIMARY KEY,
-            vehicle_name TEXT NOT NULL,
-            fuel REAL NOT NULL DEFAULT 50,
-            fuel_capacity REAL NOT NULL DEFAULT 60
-        )
-    """)
-
-    connection.commit()
-    connection.close()
+player_locations = {}
+player_vehicles = {}
 
 
 def get_player_location(user_id):
-
-    connection = connect()
-    cursor = connection.cursor()
-
-    cursor.execute(
-        "SELECT location FROM players WHERE user_id = ?",
-        (user_id,)
-    )
-
-    result = cursor.fetchone()
-
-    connection.close()
-
-    if result:
-        return result[0]
-
-    return None
+    return player_locations.get(user_id)
 
 
 def set_player_location(user_id, location):
-
-    connection = connect()
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        INSERT INTO players (user_id, location)
-        VALUES (?, ?)
-
-        ON CONFLICT(user_id)
-        DO UPDATE SET location = excluded.location
-    """, (user_id, location))
-
-    connection.commit()
-    connection.close()
+    player_locations[user_id] = location
 
 
 def create_vehicle(user_id, vehicle_name="Toyota Camry"):
-
-    connection = connect()
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        INSERT OR IGNORE INTO vehicles
-        (user_id, vehicle_name, fuel, fuel_capacity)
-
-        VALUES (?, ?, 50, 60)
-    """, (user_id, vehicle_name))
-
-    connection.commit()
-    connection.close()
+    if user_id not in player_vehicles:
+        player_vehicles[user_id] = {
+            "vehicle_name": vehicle_name,
+            "fuel": 50.0,
+            "fuel_capacity": 60.0,
+        }
 
 
 def get_vehicle(user_id):
+    vehicle = player_vehicles.get(user_id)
 
-    connection = connect()
-    cursor = connection.cursor()
+    if vehicle is None:
+        return None
 
-    cursor.execute("""
-        SELECT vehicle_name, fuel, fuel_capacity
-
-        FROM vehicles
-
-        WHERE user_id = ?
-    """, (user_id,))
-
-    result = cursor.fetchone()
-
-    connection.close()
-
-    return result
+    return (
+        vehicle["vehicle_name"],
+        vehicle["fuel"],
+        vehicle["fuel_capacity"],
+    )
 
 
 def update_fuel(user_id, fuel):
-
-    connection = connect()
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        UPDATE vehicles
-
-        SET fuel = ?
-
-        WHERE user_id = ?
-    """, (fuel, user_id))
-
-    connection.commit()
-    connection.close()
+    if user_id in player_vehicles:
+        player_vehicles[user_id]["fuel"] = fuel
 
 
-# Create database tables when bot starts
-setup_database()
 
 
 # =========================================================
