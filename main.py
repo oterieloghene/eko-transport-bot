@@ -42,10 +42,6 @@ FUEL_CONSUMPTION = 0.5
 DEPARTURE_MESSAGE_DELETE_DELAY = 5
 
 
-# =========================================================
-# PLAYER LOCATION
-# =========================================================
-
 def get_player_location(user_id):
     return player_locations.get(user_id)
 
@@ -54,13 +50,10 @@ def set_player_location(user_id, location):
     player_locations[user_id] = location
 
 
-# =========================================================
-# VEHICLE
-# =========================================================
-
 def create_vehicle(user_id, vehicle_name="Toyota Camry"):
 
     if user_id not in player_vehicles:
+
         player_vehicles[user_id] = {
             "vehicle_name": vehicle_name,
             "fuel": 50.0,
@@ -96,10 +89,6 @@ def update_vehicle_location(user_id, location):
         player_vehicles[user_id]["location"] = location
 
 
-# =========================================================
-# BALANCE
-# =========================================================
-
 def get_balance(user_id):
 
     if user_id not in player_balances:
@@ -118,13 +107,27 @@ def update_balance(user_id, amount):
 # =========================================================
 
 LOCATIONS = {
-    "help-desk": "🛂 Immigration Office",
-    "èko-lobby": "🟢 Èko Green Zone",
-    "mayors-penthouse": "🏛️ Mayor's Penthouse",
-    "deputys-residence": "🏠 Deputy's Residence",
-    "banking-hall": "🏦 Banking Hall",
-    "mainland": "🌍 Mainland",
-    "èko-oil-and-gas": "⛽ Èko Oil & Gas",
+
+    "help-desk":
+        "🛂 Immigration Office",
+
+    "èko-lobby":
+        "🟢 Èko Green Zone",
+
+    "mayors-penthouse":
+        "🏛️ Mayor's Penthouse",
+
+    "deputys-residence":
+        "🏠 Deputy's Residence",
+
+    "banking-hall":
+        "🏦 Banking Hall",
+
+    "mainland":
+        "🌍 Mainland",
+
+    "èko-oil-and-gas":
+        "⛽ Èko Oil & Gas",
 }
 
 
@@ -133,6 +136,7 @@ LOCATIONS = {
 # =========================================================
 
 ROUTES = {
+
     ("banking-hall", "èko-lobby"): {
         "distance": 3,
         "time": 10,
@@ -176,25 +180,26 @@ ROUTES = {
 
 
 # =========================================================
-# LOCK LOCATION CHANNELS FOR PLAYER
+# CHANNEL ACCESS
 # =========================================================
 
 async def lock_travel_channels(guild, user, destination):
 
-    for channel_name in LOCATIONS:
+    for location_name in LOCATIONS:
 
         channel = discord.utils.get(
             guild.text_channels,
-            name=channel_name
+            name=location_name
         )
 
         if channel is None:
             continue
 
-        if channel_name == destination:
+        if location_name == destination:
             continue
 
         try:
+
             await channel.set_permissions(
                 user,
                 view_channel=False,
@@ -202,46 +207,47 @@ async def lock_travel_channels(guild, user, destination):
             )
 
         except discord.Forbidden:
+
             print(
-                f"Permission denied for #{channel_name}"
+                f"Cannot lock #{location_name} for {user}."
             )
 
         except discord.HTTPException as error:
+
             print(
-                f"Error locking #{channel_name}: {error}"
+                f"Error locking #{location_name}: {error}"
             )
 
 
-# =========================================================
-# UNLOCK LOCATION CHANNELS FOR PLAYER
-# =========================================================
-
 async def unlock_travel_channels(guild, user):
 
-    for channel_name in LOCATIONS:
+    for location_name in LOCATIONS:
 
         channel = discord.utils.get(
             guild.text_channels,
-            name=channel_name
+            name=location_name
         )
 
         if channel is None:
             continue
 
         try:
+
             await channel.set_permissions(
                 user,
                 overwrite=None
             )
 
         except discord.Forbidden:
+
             print(
-                f"Permission denied for #{channel_name}"
+                f"Cannot unlock #{location_name} for {user}."
             )
 
         except discord.HTTPException as error:
+
             print(
-                f"Error unlocking #{channel_name}: {error}"
+                f"Error unlocking #{location_name}: {error}"
             )
 
 
@@ -256,20 +262,22 @@ async def delete_departure_message(message):
     )
 
     try:
+
         await message.delete()
 
     except discord.NotFound:
         pass
 
     except discord.Forbidden:
+
         print(
-            "Bot does not have permission "
-            "to delete the departure message."
+            "Bot cannot delete departure message."
         )
 
     except discord.HTTPException as error:
+
         print(
-            f"Could not delete departure message: {error}"
+            f"Error deleting departure message: {error}"
         )
 
 
@@ -323,6 +331,11 @@ async def location(ctx: commands.Context):
             if user_id not in player_vehicles:
                 create_vehicle(user_id)
 
+                update_vehicle_location(
+                    user_id,
+                    current_location
+                )
+
         else:
 
             await ctx.send(
@@ -333,11 +346,26 @@ async def location(ctx: commands.Context):
 
             return
 
+    vehicle = get_vehicle(user_id)
+
+    if vehicle is None:
+
+        create_vehicle(user_id)
+
+        vehicle = get_vehicle(user_id)
+
+    vehicle_location = vehicle[3]
+
     await ctx.send(
         "📍 **YOUR CURRENT LOCATION**\n"
         "════════════════════\n\n"
-        f"You are currently at:\n"
+
+        f"👤 Player:\n"
         f"**{LOCATIONS[current_location]}**\n\n"
+
+        f"🚗 Vehicle:\n"
+        f"**{LOCATIONS.get(vehicle_location, 'Unknown')}**\n\n"
+
         "════════════════════"
     )
 
@@ -361,7 +389,8 @@ async def route(ctx: commands.Context):
         "🌍 **Mainland**\n"
         "⛽ **Èko Oil & Gas**\n\n"
 
-        "Use `!drive <destination>` to travel.\n\n"
+        "Use `!drive <destination>` "
+        "to travel.\n\n"
 
         "════════════════════"
     )
@@ -507,8 +536,7 @@ async def drive(ctx: commands.Context, destination=None):
         remaining_fuel
     )
 
-    # Lock all registered location channels
-    # except the destination.
+    # Lock all location channels except destination.
     if ctx.guild is not None:
 
         await lock_travel_channels(
@@ -541,13 +569,13 @@ async def drive(ctx: commands.Context, destination=None):
 
     await asyncio.sleep(travel_time)
 
-    # Update player location.
+    # Move player.
     set_player_location(
         user_id,
         destination
     )
 
-    # Update vehicle location.
+    # Move vehicle.
     update_vehicle_location(
         user_id,
         destination
@@ -561,6 +589,7 @@ async def drive(ctx: commands.Context, destination=None):
     if destination_channel is None:
 
         if ctx.guild is not None:
+
             await unlock_travel_channels(
                 ctx.guild,
                 ctx.author
@@ -569,13 +598,13 @@ async def drive(ctx: commands.Context, destination=None):
         await ctx.send(
             "⚠️ **ARRIVAL CHANNEL NOT FOUND**\n\n"
             f"I could not find `#{destination}`.\n\n"
-            "Your player and vehicle locations have "
-            "still been updated."
+            "Your player and vehicle locations "
+            "have still been updated."
         )
 
         return
 
-    # Unlock all location channels after arrival.
+    # Unlock location channels after arrival.
     if ctx.guild is not None:
 
         await unlock_travel_channels(
@@ -870,7 +899,10 @@ async def balance(ctx: commands.Context):
 # =========================================================
 
 @vehicle.error
-async def vehicle_error(ctx: commands.Context, error):
+async def vehicle_error(
+    ctx: commands.Context,
+    error
+):
 
     await ctx.send(
         f"❌ Vehicle error: `{error}`"
