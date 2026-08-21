@@ -358,23 +358,41 @@ async def drive(
     await asyncio.sleep(travel_time)
 
     set_player_location(
-        user_id,
-        destination
-    )
+    user_id,
+    destination
+)
+
+# Find the destination Discord channel
+destination_channel = discord.utils.get(
+    ctx.guild.text_channels,
+    name=destination
+)
+
+if destination_channel is None:
 
     await ctx.send(
-
-        "✅ **ARRIVAL CONFIRMED**\n"
-        "════════════════════\n\n"
-
-        f"🚗 {ctx.author.mention} "
-        "has arrived at:\n\n"
-
-        f"**{LOCATIONS[destination]}**\n\n"
-
-        "📍 Your current location "
-        "has been updated."
+        "⚠️ **ARRIVAL CHANNEL NOT FOUND**\n\n"
+        f"The destination `{destination}` is registered "
+        "in the transport system, but I cannot find "
+        "the Discord channel.\n\n"
+        "Your location has still been updated."
     )
+
+    return
+
+
+await destination_channel.send(
+
+    "✅ **ARRIVAL CONFIRMED**\n"
+    "════════════════════\n\n"
+
+    f"🚗 {ctx.author.mention} "
+    "has arrived at:\n\n"
+
+    f"**{LOCATIONS[destination]}**\n\n"
+
+    "📍 Your current location has been updated."
+)
 
 
 # =========================================================
