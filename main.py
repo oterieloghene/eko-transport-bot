@@ -42,6 +42,10 @@ FUEL_CONSUMPTION = 0.5
 DEPARTURE_MESSAGE_DELETE_DELAY = 5
 
 
+# =========================================================
+# PLAYER DATA FUNCTIONS
+# =========================================================
+
 def get_player_location(user_id):
     return player_locations.get(user_id)
 
@@ -194,7 +198,10 @@ def get_location_channel(guild, location):
 
 
 # =========================================================
-# SET PLAYER LOCATION ACCESS
+# UPDATE PLAYER CHANNEL ACCESS
+#
+# Player can SEE every location channel.
+# Player can TYPE only in current location.
 # =========================================================
 
 async def update_location_permissions(
@@ -215,17 +222,18 @@ async def update_location_permissions(
 
         overwrite = channel.overwrites_for(user)
 
+        # Player can always see the location channels.
+        overwrite.view_channel = True
+        overwrite.read_message_history = True
+
+        # Player can only type in current location.
         if location_name == allowed_location:
 
-            overwrite.view_channel = True
             overwrite.send_messages = True
-            overwrite.read_message_history = True
 
         else:
 
-            overwrite.view_channel = False
             overwrite.send_messages = False
-            overwrite.read_message_history = False
 
         try:
 
@@ -239,7 +247,8 @@ async def update_location_permissions(
 
             print(
                 f"Permission denied for #{channel.name}. "
-                "Check the bot role and Manage Channels permission."
+                "Make sure the bot has Manage Channels "
+                "and its role is above the player's role."
             )
 
         except discord.HTTPException as error:
@@ -367,10 +376,10 @@ async def location(ctx: commands.Context):
         "📍 **YOUR CURRENT LOCATION**\n"
         "════════════════════\n\n"
 
-        f"👤 Player:\n"
+        f"👤 Player Location:\n"
         f"**{LOCATIONS.get(current_location, 'Unknown')}**\n\n"
 
-        f"🚗 Vehicle:\n"
+        f"🚗 Vehicle Location:\n"
         f"**{LOCATIONS.get(vehicle_location, 'Unknown')}**\n\n"
 
         "════════════════════"
@@ -493,8 +502,14 @@ async def drive(ctx: commands.Context, destination=None):
 
         vehicle = get_vehicle(user_id)
 
-    vehicle_name, current_fuel, fuel_capacity, vehicle_location = vehicle
+    (
+        vehicle_name,
+        current_fuel,
+        fuel_capacity,
+        vehicle_location
+    ) = vehicle
 
+    # Player and vehicle must be at the same location.
     if vehicle_location is None:
 
         update_vehicle_location(
@@ -543,7 +558,11 @@ async def drive(ctx: commands.Context, destination=None):
         remaining_fuel
     )
 
-    # Lock every location except the destination.
+    # =====================================================
+    # LOCK ALL OTHER LOCATION CHANNELS FOR THIS PLAYER
+    # PLAYER CAN SEE THEM BUT CANNOT TYPE.
+    # =====================================================
+
     await update_location_permissions(
         ctx.guild,
         ctx.author,
@@ -574,6 +593,10 @@ async def drive(ctx: commands.Context, destination=None):
 
     await asyncio.sleep(travel_time)
 
+    # =====================================================
+    # UPDATE PLAYER + VEHICLE LOCATION AFTER ARRIVAL
+    # =====================================================
+
     set_player_location(
         user_id,
         destination
@@ -584,7 +607,8 @@ async def drive(ctx: commands.Context, destination=None):
         destination
     )
 
-    # Destination remains the ONLY accessible location.
+    # Destination remains the ONLY location channel
+    # where the player can type.
     await update_location_permissions(
         ctx.guild,
         ctx.author,
@@ -662,7 +686,12 @@ async def vehicle(ctx: commands.Context):
 
         vehicle_data = get_vehicle(user_id)
 
-    vehicle_name, fuel, fuel_capacity, vehicle_location = vehicle_data
+    (
+        vehicle_name,
+        fuel,
+        fuel_capacity,
+        vehicle_location
+    ) = vehicle_data
 
     await ctx.send(
         "🚘 **YOUR VEHICLE**\n"
@@ -715,8 +744,14 @@ async def refuel(ctx: commands.Context, confirmation=None):
 
         vehicle = get_vehicle(user_id)
 
-    vehicle_name, current_fuel, fuel_capacity, vehicle_location = vehicle
+    (
+        vehicle_name,
+        current_fuel,
+        fuel_capacity,
+        vehicle_location
+    ) = vehicle
 
+    # BOTH PLAYER AND VEHICLE MUST BE AT THE STATION.
     if player_location != "èko-oil-and-gas":
 
         await ctx.send(
