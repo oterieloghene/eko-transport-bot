@@ -38,6 +38,7 @@ player_balances = {}
 STARTING_BALANCE = 200_000
 FUEL_PRICE = 1_300
 FUEL_CONSUMPTION = 0.5
+
 DEPARTURE_MESSAGE_DELETE_DELAY = 5
 
 
@@ -179,49 +180,72 @@ ROUTES = {
 
 
 # =========================================================
-# LOCATION ACCESS
+# FIND LOCATION CHANNEL
 # =========================================================
 
-async def set_location_access(guild, user, allowed_location):
+def get_location_channel(guild, location):
+
+    return discord.utils.find(
+        lambda channel:
+            isinstance(channel, discord.TextChannel)
+            and channel.name == location,
+        guild.channels
+    )
+
+
+# =========================================================
+# SET PLAYER LOCATION ACCESS
+# =========================================================
+
+async def update_location_permissions(
+    guild,
+    user,
+    allowed_location
+):
 
     for location_name in LOCATIONS:
 
-        channel = discord.utils.get(
-            guild.text_channels,
-            name=location_name
+        channel = get_location_channel(
+            guild,
+            location_name
         )
 
         if channel is None:
             continue
 
+        overwrite = channel.overwrites_for(user)
+
+        if location_name == allowed_location:
+
+            overwrite.view_channel = True
+            overwrite.send_messages = True
+            overwrite.read_message_history = True
+
+        else:
+
+            overwrite.view_channel = False
+            overwrite.send_messages = False
+            overwrite.read_message_history = False
+
         try:
 
-            if location_name == allowed_location:
-
-                await channel.set_permissions(
-                    user,
-                    view_channel=True,
-                    send_messages=True
-                )
-
-            else:
-
-                await channel.set_permissions(
-                    user,
-                    view_channel=False,
-                    send_messages=False
-                )
+            await channel.set_permissions(
+                user,
+                overwrite=overwrite,
+                reason="Èko player location system"
+            )
 
         except discord.Forbidden:
 
             print(
-                f"Permission error for #{location_name}"
+                f"Permission denied for #{channel.name}. "
+                "Check the bot role and Manage Channels permission."
             )
 
         except discord.HTTPException as error:
 
             print(
-                f"Permission error for #{location_name}: {error}"
+                f"Failed to update #{channel.name}: {error}"
             )
 
 
@@ -245,14 +269,13 @@ async def delete_departure_message(message):
     except discord.Forbidden:
 
         print(
-            "Bot does not have permission "
-            "to delete the departure message."
+            "Bot cannot delete the departure message."
         )
 
     except discord.HTTPException as error:
 
         print(
-            f"Could not delete departure message: {error}"
+            f"Failed to delete departure message: {error}"
         )
 
 
@@ -294,31 +317,7 @@ async def location(ctx: commands.Context):
 
     if current_location is None:
 
-        if ctx.channel.name in LOCATIONS:
-
-            current_location = ctx.channel.name
-
-            set_player_location(
-                user_id,
-                current_location
-            )
-
-            if user_id not in player_vehicles:
-
-                create_vehicle(user_id)
-
-            update_vehicle_location(
-                user_id,
-                current_location
-            )
-
-            await set_location_access(
-                ctx.guild,
-                ctx.author,
-                current_location
-            )
-
-        else:
+        if ctx.channel.name not in LOCATIONS:
 
             await ctx.send(
                 "📍 **LOCATION UNKNOWN**\n\n"
@@ -327,6 +326,32 @@ async def location(ctx: commands.Context):
             )
 
             return
+
+        current_location = ctx.channel.name
+
+        set_player_location(
+            user_id,
+            current_location
+        )
+
+        if user_id not in player_vehicles:
+
+            create_vehicle(user_id)
+
+        vehicle = get_vehicle(user_id)
+
+        if vehicle[3] is None:
+
+            update_vehicle_location(
+                user_id,
+                current_location
+            )
+
+        await update_location_permissions(
+            ctx.guild,
+            ctx.author,
+            current_location
+        )
 
     vehicle = get_vehicle(user_id)
 
@@ -518,6 +543,13 @@ async def drive(ctx: commands.Context, destination=None):
         remaining_fuel
     )
 
+    # Lock every location except the destination.
+    await update_location_permissions(
+        ctx.guild,
+        ctx.author,
+        destination
+    )
+
     departure_message = await ctx.send(
         "🚗 **JOURNEY STARTED**\n"
         "════════════════════\n\n"
@@ -552,17 +584,16 @@ async def drive(ctx: commands.Context, destination=None):
         destination
     )
 
-    if ctx.guild is not None:
+    # Destination remains the ONLY accessible location.
+    await update_location_permissions(
+        ctx.guild,
+        ctx.author,
+        destination
+    )
 
-        await set_location_access(
-            ctx.guild,
-            ctx.author,
-            destination
-        )
-
-    destination_channel = discord.utils.get(
-        ctx.guild.text_channels,
-        name=destination
+    destination_channel = get_location_channel(
+        ctx.guild,
+        destination
     )
 
     if destination_channel is None:
@@ -867,8 +898,4 @@ async def vehicle_error(
 
 # =========================================================
 # START BOT
-# =========================================================
-
-if __name__ == "__main__":
-
-    bot.run(TOKEN)
+# ===============
