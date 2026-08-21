@@ -383,30 +383,27 @@ async def vehicle(ctx: commands.Context):
     vehicle = get_vehicle(user_id)
 
     if vehicle is None:
-
         create_vehicle(user_id)
-
         vehicle = get_vehicle(user_id)
 
     vehicle_name, fuel, fuel_capacity = vehicle
 
-    await ctx.send(
+    current_location = get_player_location(user_id)
 
+    if current_location in LOCATIONS:
+        location_name = LOCATIONS[current_location]
+    else:
+        location_name = "📍 Unknown"
+
+    await ctx.send(
         "🚘 **YOUR VEHICLE**\n"
         "════════════════════\n\n"
-
-        f"🚗 Vehicle: "
-        f"**{vehicle_name}**\n"
-
-        f"⛽ Fuel: "
-        f"**{fuel:.1f}L / "
-        f"{fuel_capacity:.1f}L**\n"
-
-        "🅿️ Status: **Parked**\n"
-
+        f"🚗 Vehicle: **{vehicle_name}**\n"
+        f"⛽ Fuel: **{fuel:.1f}L / {fuel_capacity:.1f}L**\n"
+        f"📍 Location: **{location_name}**\n"
+        "🅿️ Status: **Parked**\n\n"
         "════════════════════"
     )
-
 
 # =========================================================
 # VEHICLE ERROR HANDLER
@@ -426,6 +423,46 @@ async def vehicle_error(
         f"Vehicle error: {error}"
     )
 
+# =========================================================
+# !REFUEL
+# =========================================================
+
+@bot.command()
+async def refuel(ctx: commands.Context):
+
+    user_id = ctx.author.id
+
+    vehicle = get_vehicle(user_id)
+
+    if vehicle is None:
+        create_vehicle(user_id)
+        vehicle = get_vehicle(user_id)
+
+    vehicle_name, current_fuel, fuel_capacity = vehicle
+
+    if current_fuel >= fuel_capacity:
+        await ctx.send(
+            "⛽ **TANK ALREADY FULL**\n\n"
+            f"🚗 Vehicle: **{vehicle_name}**\n"
+            f"⛽ Fuel: **{current_fuel:.1f}L / "
+            f"{fuel_capacity:.1f}L**"
+        )
+        return
+
+    fuel_added = fuel_capacity - current_fuel
+
+    update_fuel(user_id, fuel_capacity)
+
+    await ctx.send(
+        "⛽ **REFUEL COMPLETE**\n"
+        "════════════════════\n\n"
+        f"🚗 Vehicle: **{vehicle_name}**\n"
+        f"⛽ Previous fuel: **{current_fuel:.1f}L**\n"
+        f"⛽ Added: **{fuel_added:.1f}L**\n"
+        f"⛽ Current fuel: **{fuel_capacity:.1f}L / "
+        f"{fuel_capacity:.1f}L**\n\n"
+        "════════════════════"
+    )
 
 # =========================================================
 # START BOT
