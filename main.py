@@ -41,10 +41,12 @@ FUEL_CONSUMPTION = 0.5
 
 
 def get_player_location(user_id):
+
     return player_locations.get(user_id)
 
 
 def set_player_location(user_id, location):
+
     player_locations[user_id] = location
 
 
@@ -56,6 +58,7 @@ def create_vehicle(user_id, vehicle_name="Toyota Camry"):
             "vehicle_name": vehicle_name,
             "fuel": 50.0,
             "fuel_capacity": 60.0,
+            "location": get_player_location(user_id),
         }
 
 
@@ -70,6 +73,7 @@ def get_vehicle(user_id):
         vehicle["vehicle_name"],
         vehicle["fuel"],
         vehicle["fuel_capacity"],
+        vehicle["location"],
     )
 
 
@@ -77,6 +81,12 @@ def update_fuel(user_id, fuel):
 
     if user_id in player_vehicles:
         player_vehicles[user_id]["fuel"] = fuel
+
+
+def update_vehicle_location(user_id, location):
+
+    if user_id in player_vehicles:
+        player_vehicles[user_id]["location"] = location
 
 
 def get_balance(user_id):
@@ -344,7 +354,10 @@ async def drive(ctx: commands.Context, destination=None):
 
     travel_time = route_data["time"]
 
-    # Get vehicle
+    # =====================================================
+    # GET VEHICLE
+    # =====================================================
+
     vehicle = get_vehicle(user_id)
 
     if vehicle is None:
@@ -353,9 +366,25 @@ async def drive(ctx: commands.Context, destination=None):
 
         vehicle = get_vehicle(user_id)
 
-    vehicle_name, current_fuel, fuel_capacity = vehicle
+    vehicle_name, current_fuel, fuel_capacity, vehicle_location = vehicle
 
-    # Calculate fuel
+    # =====================================================
+    # KEEP VEHICLE LOCATION IN SYNC
+    # =====================================================
+
+    if vehicle_location is None:
+
+        update_vehicle_location(
+            user_id,
+            current_location
+        )
+
+        vehicle_location = current_location
+
+    # =====================================================
+    # CALCULATE FUEL
+    # =====================================================
+
     fuel_used = distance * FUEL_CONSUMPTION
 
     if current_fuel < fuel_used:
@@ -395,10 +424,23 @@ async def drive(ctx: commands.Context, destination=None):
 
     await asyncio.sleep(travel_time)
 
+    # =====================================================
+    # UPDATE PLAYER AND VEHICLE LOCATION TOGETHER
+    # =====================================================
+
     set_player_location(
         user_id,
         destination
     )
+
+    update_vehicle_location(
+        user_id,
+        destination
+    )
+
+    # =====================================================
+    # ARRIVAL CHANNEL
+    # =====================================================
 
     destination_channel = discord.utils.get(
         ctx.guild.text_channels,
@@ -410,7 +452,8 @@ async def drive(ctx: commands.Context, destination=None):
         await ctx.send(
             "⚠️ **ARRIVAL CHANNEL NOT FOUND**\n\n"
             f"I could not find `#{destination}`.\n\n"
-            "Your game location has still been updated."
+            "Your player and vehicle locations have "
+            "still been updated."
         )
 
         return
@@ -423,6 +466,9 @@ async def drive(ctx: commands.Context, destination=None):
         f"**{LOCATIONS[destination]}**\n\n"
 
         f"⛽ Fuel remaining: **{remaining_fuel:.1f}L**\n\n"
+
+        "👤 Player location: **Updated**\n"
+        "🚗 Vehicle location: **Updated**\n\n"
 
         "📍 Your current location has been updated."
     )
@@ -437,6 +483,30 @@ async def vehicle(ctx: commands.Context):
 
     user_id = ctx.author.id
 
+    # Get player location
+    current_location = get_player_location(user_id)
+
+    if current_location is None:
+
+        if ctx.channel.name in LOCATIONS:
+
+            current_location = ctx.channel.name
+
+            set_player_location(
+                user_id,
+                current_location
+            )
+
+        else:
+
+            await ctx.send(
+                "📍 **LOCATION UNKNOWN**\n\n"
+                "Your current game location has not been established."
+            )
+
+            return
+
+    # Get vehicle
     vehicle = get_vehicle(user_id)
 
     if vehicle is None:
@@ -445,25 +515,31 @@ async def vehicle(ctx: commands.Context):
 
         vehicle = get_vehicle(user_id)
 
-    vehicle_name, fuel, fuel_capacity = vehicle
+    vehicle_name, fuel, fuel_capacity, vehicle_location = vehicle
 
-    current_location = get_player_location(user_id)
+    player_location_name = LOCATIONS.get(
+        current_location,
+        "📍 Unknown"
+    )
 
-    if current_location in LOCATIONS:
-
-        location_name = LOCATIONS[current_location]
-
-    else:
-
-        location_name = "📍 Unknown"
+    vehicle_location_name = LOCATIONS.get(
+        vehicle_location,
+        "📍 Unknown"
+    )
 
     await ctx.send(
         "🚘 **YOUR VEHICLE**\n"
         "════════════════════\n\n"
 
         f"🚗 Vehicle: **{vehicle_name}**\n"
-        f"⛽ Fuel: **{fuel:.1f}L / {fuel_capacity:.1f}L**\n"
-        f"📍 Location: **{location_name}**\n"
+        f"⛽ Fuel: **{fuel:.1f}L / {fuel_capacity:.1f}L**\n\n"
+
+        f"👤 Player Location:\n"
+        f"**{player_location_name}**\n\n"
+
+        f"🚗 Vehicle Location:\n"
+        f"**{vehicle_location_name}**\n\n"
+
         "🅿️ Status: **Parked**\n\n"
 
         "════════════════════"
@@ -479,32 +555,28 @@ async def refuel(ctx: commands.Context, confirmation=None):
 
     user_id = ctx.author.id
 
-    # Must be at the fuel station
-    if ctx.channel.name != "èko-oil-and-gas":
+    # =====================================================
+    # GET PLAYER LOCATION
+    # =====================================================
 
-        current_location = get_player_location(user_id)
+    player_location = get_player_location(user_id)
 
-        if current_location in LOCATIONS:
-
-            location_name = LOCATIONS[current_location]
-
-        else:
-
-            location_name = "📍 Unknown"
+    if player_location is None:
 
         await ctx.send(
-            "⛽ **REFUEL FAILED**\n"
+            "📍 **REFUEL FAILED**\n"
             "════════════════════\n\n"
 
-            "You must be at **Èko Oil & Gas** "
-            "to refuel your vehicle.\n\n"
+            "Your current player location is unknown.\n\n"
 
-            f"📍 Current location: **{location_name}**\n\n"
-
-            "════════════════════"
+            "Use `!location` first."
         )
 
         return
+
+    # =====================================================
+    # GET VEHICLE
+    # =====================================================
 
     vehicle = get_vehicle(user_id)
 
@@ -514,7 +586,57 @@ async def refuel(ctx: commands.Context, confirmation=None):
 
         vehicle = get_vehicle(user_id)
 
-    vehicle_name, current_fuel, fuel_capacity = vehicle
+    vehicle_name, current_fuel, fuel_capacity, vehicle_location = vehicle
+
+    # =====================================================
+    # PLAYER MUST BE AT ÈKO OIL & GAS
+    # =====================================================
+
+    if player_location != "èko-oil-and-gas":
+
+        await ctx.send(
+            "⛽ **REFUEL FAILED**\n"
+            "════════════════════\n\n"
+
+            "You must be at **Èko Oil & Gas** "
+            "to refuel your vehicle.\n\n"
+
+            f"👤 Your location:\n"
+            f"**{LOCATIONS.get(player_location, 'Unknown')}**\n\n"
+
+            "Required location:\n"
+            "**⛽ Èko Oil & Gas**"
+        )
+
+        return
+
+    # =====================================================
+    # VEHICLE MUST ALSO BE AT ÈKO OIL & GAS
+    # =====================================================
+
+    if vehicle_location != "èko-oil-and-gas":
+
+        await ctx.send(
+            "⛽ **REFUEL FAILED**\n"
+            "════════════════════\n\n"
+
+            "Your vehicle is not at **Èko Oil & Gas**.\n\n"
+
+            f"👤 Player location:\n"
+            f"**{LOCATIONS.get(player_location, 'Unknown')}**\n\n"
+
+            f"🚗 Vehicle location:\n"
+            f"**{LOCATIONS.get(vehicle_location, 'Unknown')}**\n\n"
+
+            "Both you and your vehicle must be at "
+            "**⛽ Èko Oil & Gas** to refuel."
+        )
+
+        return
+
+    # =====================================================
+    # CHECK FUEL
+    # =====================================================
 
     if current_fuel >= fuel_capacity:
 
@@ -527,20 +649,34 @@ async def refuel(ctx: commands.Context, confirmation=None):
 
         return
 
+    # =====================================================
+    # CALCULATE COST
+    # =====================================================
+
     fuel_needed = fuel_capacity - current_fuel
 
     total_cost = fuel_needed * FUEL_PRICE
 
     balance = get_balance(user_id)
 
-    # Confirmation
+    # =====================================================
+    # CONFIRMATION
+    # =====================================================
+
     if confirmation != "confirm":
 
         await ctx.send(
             "⛽ **REFUEL REQUEST**\n"
             "════════════════════\n\n"
 
-            f"🚗 Vehicle: **{vehicle_name}**\n"
+            f"🚗 Vehicle: **{vehicle_name}**\n\n"
+
+            f"👤 Player location:\n"
+            f"**{LOCATIONS[player_location]}**\n\n"
+
+            f"🚗 Vehicle location:\n"
+            f"**{LOCATIONS[vehicle_location]}**\n\n"
+
             f"⛽ Current fuel: **{current_fuel:.1f}L**\n"
             f"⛽ Capacity: **{fuel_capacity:.1f}L**\n"
             f"⛽ Required: **{fuel_needed:.1f}L**\n\n"
@@ -558,7 +694,10 @@ async def refuel(ctx: commands.Context, confirmation=None):
 
         return
 
-    # Check balance
+    # =====================================================
+    # CHECK BALANCE
+    # =====================================================
+
     if balance < total_cost:
 
         await ctx.send(
@@ -573,7 +712,10 @@ async def refuel(ctx: commands.Context, confirmation=None):
 
         return
 
-    # Deduct money
+    # =====================================================
+    # DEDUCT MONEY
+    # =====================================================
+
     new_balance = balance - total_cost
 
     update_balance(
@@ -581,17 +723,30 @@ async def refuel(ctx: commands.Context, confirmation=None):
         new_balance
     )
 
-    # Fill tank
+    # =====================================================
+    # FILL TANK
+    # =====================================================
+
     update_fuel(
         user_id,
         fuel_capacity
     )
 
+    # =====================================================
+    # REFUEL SUCCESS
+    # =====================================================
+
     await ctx.send(
         "⛽ **REFUEL COMPLETE**\n"
         "════════════════════\n\n"
 
-        f"🚗 Vehicle: **{vehicle_name}**\n"
+        f"🚗 Vehicle: **{vehicle_name}**\n\n"
+
+        f"👤 Player location:\n"
+        f"**{LOCATIONS[player_location]}**\n\n"
+
+        f"🚗 Vehicle location:\n"
+        f"**{LOCATIONS[vehicle_location]}**\n\n"
 
         f"⛽ Previous fuel: **{current_fuel:.1f}L**\n"
         f"⛽ Added: **{fuel_needed:.1f}L**\n"
