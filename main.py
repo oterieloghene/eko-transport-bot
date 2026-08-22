@@ -1,5 +1,6 @@
 import os
 import asyncio
+import math
 import discord
 from discord.ext import commands
 
@@ -36,21 +37,338 @@ player_vehicles = {}
 player_balances = {}
 
 STARTING_BALANCE = 200_000
+
 FUEL_PRICE = 1_300
 FUEL_CONSUMPTION = 0.5
+
+# Real calculated distance is used for fuel.
+# Travel time is compressed for testing.
+#
+# 1 km = 2 seconds
+#
+# Minimum: 1 second
+# Maximum: 60 seconds
+TIME_PER_KM = 2
+
+MIN_TRAVEL_TIME = 1
+MAX_TRAVEL_TIME = 60
 
 DEPARTURE_MESSAGE_DELETE_DELAY = 5
 
 
 # =========================================================
-# PLAYER DATA FUNCTIONS
+# LOCATION REGISTRY
+#
+# These are the CODE NAMES.
+#
+# The "channel" value is the actual Discord channel.
+# =========================================================
+
+LOCATIONS = {
+
+    # =====================================================
+    # ISLAND
+    # =====================================================
+
+    "mayor-villa": {
+        "display_name": "🏛️ Mayor's Villa",
+        "channel": "mayor's-penthouse",
+        "zone": "island",
+        "x": 10,
+        "y": 10,
+    },
+
+    "deputy-villa": {
+        "display_name": "🏠 Deputy's Villa",
+        "channel": "deputy's-residence",
+        "zone": "island",
+        "x": 12,
+        "y": 10,
+    },
+
+    "guesthouse1": {
+        "display_name": "🏡 Villa Guesthouse 1",
+        "channel": "villa-guesthouse 1",
+        "zone": "island",
+        "x": 14,
+        "y": 10,
+    },
+
+    "guesthouse2": {
+        "display_name": "🏡 Villa Guesthouse 2",
+        "channel": "villa-guesthouse 2",
+        "zone": "island",
+        "x": 14,
+        "y": 12,
+    },
+
+    "chief-staff": {
+        "display_name": "🏛️ Chief of Staff",
+        "channel": "chief-of-staff",
+        "zone": "island",
+        "x": 10,
+        "y": 14,
+    },
+
+    "council": {
+        "display_name": "🏛️ Èko Council",
+        "channel": "eko-council",
+        "zone": "island",
+        "x": 12,
+        "y": 14,
+    },
+
+    "justice-ministry": {
+        "display_name": "⚖️ Ministry of Justice",
+        "channel": "minister-of-justice",
+        "zone": "island",
+        "x": 14,
+        "y": 14,
+    },
+
+    "home-ministry": {
+        "display_name": "🏠 Ministry of Home Affairs & Housing",
+        "channel": "minister-of-home-affairs-housing",
+        "zone": "island",
+        "x": 16,
+        "y": 14,
+    },
+
+    "agric-ministry": {
+        "display_name": "🌾 Ministry of Agriculture",
+        "channel": "minister-of-agriculture",
+        "zone": "island",
+        "x": 18,
+        "y": 14,
+    },
+
+    "clerk-office": {
+        "display_name": "⚖️ Clerk Office",
+        "channel": "clerk-office",
+        "zone": "island",
+        "x": 10,
+        "y": 18,
+    },
+
+    "bank": {
+        "display_name": "🏦 Bank",
+        "channel": "banking-hall",
+        "zone": "island",
+        "x": 12,
+        "y": 18,
+    },
+
+    "hospital": {
+        "display_name": "🏥 Hospital",
+        "channel": "hospital-lobby",
+        "zone": "island",
+        "x": 14,
+        "y": 18,
+    },
+
+    "police": {
+        "display_name": "👮 Police",
+        "channel": "precint-reception",
+        "zone": "island",
+        "x": 16,
+        "y": 18,
+    },
+
+    "university": {
+        "display_name": "🎓 University",
+        "channel": "vice-chancellors-office",
+        "zone": "island",
+        "x": 18,
+        "y": 18,
+    },
+
+    "lobby": {
+        "display_name": "🟢 Èko Lobby",
+        "channel": "eko-lobby",
+        "zone": "island",
+        "x": 10,
+        "y": 22,
+    },
+
+    "clubhouse": {
+        "display_name": "🏠 Èko Clubhouse",
+        "channel": "eko-clubhouse",
+        "zone": "island",
+        "x": 14,
+        "y": 22,
+    },
+
+    "chapel": {
+        "display_name": "⛪ Èko City Chapel",
+        "channel": "eko-city-chapel",
+        "zone": "island",
+        "x": 18,
+        "y": 22,
+    },
+
+
+    # =====================================================
+    # MAINLAND
+    # =====================================================
+
+    "mainland": {
+        "display_name": "🌍 Mainland",
+        "channel": "mainland",
+        "zone": "mainland",
+        "x": 0,
+        "y": 0,
+    },
+
+    "immigration": {
+        "display_name": "🛂 Immigration Office",
+        "channel": "help-desk",
+        "zone": "mainland",
+        "x": 3,
+        "y": 1,
+    },
+
+    "market": {
+        "display_name": "🛒 Market",
+        "channel": "eko-market",
+        "zone": "mainland",
+        "x": 5,
+        "y": 2,
+    },
+
+    "restaurant": {
+        "display_name": "🍽️ Èko Restaurant",
+        "channel": "èko-restaurant",
+        "zone": "mainland",
+        "x": 7,
+        "y": 2,
+    },
+
+    "fuel-station": {
+        "display_name": "⛽ Fuel Station",
+        "channel": "èko-oil-and-gas",
+        "zone": "mainland",
+        "x": 9,
+        "y": 2,
+    },
+
+    "mall": {
+        "display_name": "🏬 Èko Mall",
+        "channel": "èko-mall",
+        "zone": "mainland",
+        "x": 11,
+        "y": 2,
+    },
+
+    "depot": {
+        "display_name": "📦 Depot",
+        "channel": "depot",
+        "zone": "mainland",
+        "x": 5,
+        "y": -2,
+    },
+
+    "dealership": {
+        "display_name": "🚗 Car Dealership",
+        "channel": "dealership",
+        "zone": "mainland",
+        "x": 7,
+        "y": -2,
+    },
+
+    "taxi-company": {
+        "display_name": "🚕 Taxi Company",
+        "channel": "taxi-company",
+        "zone": "mainland",
+        "x": 9,
+        "y": -2,
+    },
+
+    "auto-repair": {
+        "display_name": "🔧 Auto Repair",
+        "channel": "auto-repair",
+        "zone": "mainland",
+        "x": 11,
+        "y": -2,
+    },
+
+    "travel-agency": {
+        "display_name": "✈️ Travel Agency",
+        "channel": "travel-agency",
+        "zone": "mainland",
+        "x": 3,
+        "y": -2,
+    },
+
+
+    # =====================================================
+    # GHETTO
+    # =====================================================
+
+    "ghetto": {
+        "display_name": "🏚️ Ghetto",
+        "channel": "ghetto",
+        "zone": "ghetto",
+        "x": -10,
+        "y": -5,
+    },
+
+
+    # =====================================================
+    # FARMLAND
+    # =====================================================
+
+    "farmland": {
+        "display_name": "🌾 Farmland",
+        "channel": "farmland",
+        "zone": "farmland",
+        "x": -15,
+        "y": -10,
+    },
+}
+
+
+# =========================================================
+# OVERSEAS
+#
+# NOT PART OF !DRIVE
+# =========================================================
+
+OVERSEAS_LOCATIONS = {
+    "dubai": {
+        "display_name": "🇦🇪 Dubai",
+        "channel": "dubai",
+    },
+
+    "maldives": {
+        "display_name": "🇲🇻 Maldives",
+        "channel": "maldives",
+    },
+}
+
+
+# =========================================================
+# TRANSIT CENTER
+#
+# IMPORTANT:
+# Completely excluded from transportation.
+# =========================================================
+
+TRANSPORT_EXCLUDED_CHANNELS = {
+    "transit-center"
+}
+
+
+# =========================================================
+# PLAYER DATA
 # =========================================================
 
 def get_player_location(user_id):
+
     return player_locations.get(user_id)
 
 
 def set_player_location(user_id, location):
+
     player_locations[user_id] = location
 
 
@@ -84,18 +402,21 @@ def get_vehicle(user_id):
 def update_fuel(user_id, fuel):
 
     if user_id in player_vehicles:
+
         player_vehicles[user_id]["fuel"] = fuel
 
 
 def update_vehicle_location(user_id, location):
 
     if user_id in player_vehicles:
+
         player_vehicles[user_id]["location"] = location
 
 
 def get_balance(user_id):
 
     if user_id not in player_balances:
+
         player_balances[user_id] = STARTING_BALANCE
 
     return player_balances[user_id]
@@ -107,129 +428,333 @@ def update_balance(user_id, amount):
 
 
 # =========================================================
-# EKO LOCATIONS
+# LOCATION LOOKUP
 # =========================================================
 
-LOCATIONS = {
+def get_location_channel(guild, location_id):
 
-    "help-desk":
-        "🛂 Immigration Office",
+    if location_id not in LOCATIONS:
+        return None
 
-    "èko-lobby":
-        "🟢 Èko Green Zone",
-
-    "mayors-penthouse":
-        "🏛️ Mayor's Penthouse",
-
-    "deputys-residence":
-        "🏠 Deputy's Residence",
-
-    "banking-hall":
-        "🏦 Banking Hall",
-
-    "mainland":
-        "🌍 Mainland",
-
-    "èko-oil-and-gas":
-        "⛽ Èko Oil & Gas",
-}
-
-
-# =========================================================
-# ROUTES
-# =========================================================
-
-ROUTES = {
-
-    ("banking-hall", "èko-lobby"): {
-        "distance": 3,
-        "time": 10,
-    },
-
-    ("banking-hall", "mainland"): {
-        "distance": 8,
-        "time": 15,
-    },
-
-    ("mainland", "èko-oil-and-gas"): {
-        "distance": 6,
-        "time": 12,
-    },
-
-    ("èko-lobby", "help-desk"): {
-        "distance": 2,
-        "time": 8,
-    },
-
-    ("èko-lobby", "banking-hall"): {
-        "distance": 3,
-        "time": 10,
-    },
-
-    ("mainland", "banking-hall"): {
-        "distance": 8,
-        "time": 15,
-    },
-
-    ("èko-oil-and-gas", "mainland"): {
-        "distance": 6,
-        "time": 12,
-    },
-
-    ("help-desk", "èko-lobby"): {
-        "distance": 2,
-        "time": 8,
-    },
-}
-
-
-# =========================================================
-# FIND LOCATION CHANNEL
-# =========================================================
-
-def get_location_channel(guild, location):
+    channel_name = LOCATIONS[
+        location_id
+    ]["channel"]
 
     return discord.utils.find(
         lambda channel:
             isinstance(channel, discord.TextChannel)
-            and channel.name == location,
+            and channel.name.lower() == channel_name.lower(),
         guild.channels
     )
 
 
+def get_location_from_channel(channel):
+
+    if not isinstance(channel, discord.TextChannel):
+        return None
+
+    for location_id, data in LOCATIONS.items():
+
+        if (
+            channel.name.lower()
+            == data["channel"].lower()
+        ):
+
+            return location_id
+
+    return None
+
+
 # =========================================================
-# UPDATE PLAYER CHANNEL ACCESS
+# DESTINATION RESOLVER
+# =========================================================
+
+def resolve_location(identifier):
+
+    identifier = identifier.lower().strip()
+
+    if identifier in LOCATIONS:
+        return identifier
+
+    aliases = {
+
+        "mayor": "mayor-villa",
+
+        "deputy": "deputy-villa",
+
+        "guesthouse-1": "guesthouse1",
+        "guesthouse-2": "guesthouse2",
+
+        "chief": "chief-staff",
+
+        "justice": "justice-ministry",
+
+        "home": "home-ministry",
+
+        "agriculture": "agric-ministry",
+        "agric": "agric-ministry",
+
+        "clerk": "clerk-office",
+
+        "bank": "bank",
+
+        "hospital": "hospital",
+
+        "police": "police",
+
+        "university": "university",
+
+        "lobby": "lobby",
+
+        "clubhouse": "clubhouse",
+
+        "chapel": "chapel",
+
+        "immigration": "immigration",
+
+        "market": "market",
+
+        "restaurant": "restaurant",
+
+        "fuel": "fuel-station",
+        "gas": "fuel-station",
+
+        "mall": "mall",
+
+        "depot": "depot",
+
+        "cars": "dealership",
+        "dealership": "dealership",
+
+        "taxi": "taxi-company",
+
+        "repair": "auto-repair",
+
+        "travel": "travel-agency",
+
+        "farm": "farmland",
+    }
+
+    return aliases.get(identifier)
+
+
+# =========================================================
+# DISTANCE
+# =========================================================
+
+def calculate_distance(origin, destination):
+
+    origin_data = LOCATIONS[origin]
+    destination_data = LOCATIONS[destination]
+
+    dx = (
+        destination_data["x"]
+        - origin_data["x"]
+    )
+
+    dy = (
+        destination_data["y"]
+        - origin_data["y"]
+    )
+
+    return math.sqrt(
+        dx ** 2 +
+        dy ** 2
+    )
+
+
+# =========================================================
+# DIRECT ROUTE RULES
+# =========================================================
+
+def is_direct_route(origin, destination):
+
+    if origin not in LOCATIONS:
+        return False
+
+    if destination not in LOCATIONS:
+        return False
+
+    if origin == destination:
+        return False
+
+    origin_zone = LOCATIONS[
+        origin
+    ]["zone"]
+
+    destination_zone = LOCATIONS[
+        destination
+    ]["zone"]
+
+    # =====================================================
+    # SAME ZONE
+    # =====================================================
+
+    if origin_zone == destination_zone:
+        return True
+
+    # =====================================================
+    # ISLAND → MAINLAND
+    #
+    # Only the MAINLAND access point.
+    # =====================================================
+
+    if origin_zone == "island":
+        if destination_zone == "mainland":
+            return destination == "mainland"
+
+    # =====================================================
+    # MAINLAND → ISLAND
+    # =====================================================
+
+    if origin_zone == "mainland":
+        if destination_zone == "island":
+            return origin == "mainland"
+
+    # =====================================================
+    # ISLAND ↔ GHETTO
+    # =====================================================
+
+    if {
+        origin_zone,
+        destination_zone
+    } == {"island", "ghetto"}:
+
+        return (
+            origin == "ghetto"
+            or destination == "ghetto"
+        )
+
+    # =====================================================
+    # ISLAND ↔ FARMLAND
+    # =====================================================
+
+    if {
+        origin_zone,
+        destination_zone
+    } == {"island", "farmland"}:
+
+        return (
+            origin == "farmland"
+            or destination == "farmland"
+        )
+
+    # =====================================================
+    # MAINLAND ↔ GHETTO
+    # =====================================================
+
+    if {
+        origin_zone,
+        destination_zone
+    } == {"mainland", "ghetto"}:
+
+        return (
+            origin == "mainland"
+            or destination == "mainland"
+        )
+
+    # =====================================================
+    # MAINLAND ↔ FARMLAND
+    # =====================================================
+
+    if {
+        origin_zone,
+        destination_zone
+    } == {"mainland", "farmland"}:
+
+        return (
+            origin == "mainland"
+            or destination == "mainland"
+        )
+
+    # =====================================================
+    # GHETTO ↔ FARMLAND
+    # =====================================================
+
+    if {
+        origin_zone,
+        destination_zone
+    } == {"ghetto", "farmland"}:
+
+        return True
+
+    return False
+
+
+# =========================================================
+# DIRECT DESTINATIONS
+# =========================================================
+
+def get_direct_destinations(origin):
+
+    destinations = []
+
+    for destination in LOCATIONS:
+
+        if destination == origin:
+            continue
+
+        if is_direct_route(
+            origin,
+            destination
+        ):
+
+            destinations.append(
+                destination
+            )
+
+    return destinations
+
+
+# =========================================================
+# PERMISSION SYSTEM
 #
-# Player can SEE every location channel.
-# Player can TYPE only in current location.
+# During travel:
+#     ALL channels = READ ONLY
+#
+# When arrived:
+#     ONLY arrival channel = WRITABLE
+#     EVERYTHING ELSE = READ ONLY
 # =========================================================
 
 async def update_location_permissions(
     guild,
     user,
-    allowed_location
+    current_location=None
 ):
 
-    for location_name in LOCATIONS:
+    for location_id in LOCATIONS:
 
         channel = get_location_channel(
             guild,
-            location_name
+            location_id
         )
 
         if channel is None:
             continue
 
-        overwrite = channel.overwrites_for(user)
+        overwrite = channel.overwrites_for(
+            user
+        )
 
-        # Player can always see the location channels.
+        # Player can always see locations.
         overwrite.view_channel = True
         overwrite.read_message_history = True
 
-        # Player can only type in current location.
-        if location_name == allowed_location:
+        # =================================================
+        # CURRENT LOCATION
+        # =================================================
+
+        if (
+            current_location is not None
+            and location_id == current_location
+        ):
 
             overwrite.send_messages = True
+
+        # =================================================
+        # EVERY OTHER LOCATION
+        # =================================================
 
         else:
 
@@ -240,21 +765,20 @@ async def update_location_permissions(
             await channel.set_permissions(
                 user,
                 overwrite=overwrite,
-                reason="Èko player location system"
+                reason="Èko location transportation system"
             )
 
         except discord.Forbidden:
 
             print(
-                f"Permission denied for #{channel.name}. "
-                "Make sure the bot has Manage Channels "
-                "and its role is above the player's role."
+                f"Permission denied for #{channel.name}."
             )
 
         except discord.HTTPException as error:
 
             print(
-                f"Failed to update #{channel.name}: {error}"
+                f"Permission error for "
+                f"#{channel.name}: {error}"
             )
 
 
@@ -272,19 +796,17 @@ async def delete_departure_message(message):
 
         await message.delete()
 
-    except discord.NotFound:
+    except (
+        discord.NotFound,
+        discord.Forbidden
+    ):
+
         pass
-
-    except discord.Forbidden:
-
-        print(
-            "Bot cannot delete the departure message."
-        )
 
     except discord.HTTPException as error:
 
         print(
-            f"Failed to delete departure message: {error}"
+            f"Failed to delete message: {error}"
         )
 
 
@@ -295,12 +817,19 @@ async def delete_departure_message(message):
 @bot.event
 async def on_ready():
 
-    print(f"Bot is online as {bot.user}")
+    print(
+        f"Bot is online as {bot.user}"
+    )
 
-    print("Commands loaded:")
+    print(
+        "Transportation commands:"
+    )
 
     for command in bot.commands:
-        print(f"!{command.name}")
+
+        print(
+            f"!{command.name}"
+        )
 
 
 # =========================================================
@@ -308,9 +837,11 @@ async def on_ready():
 # =========================================================
 
 @bot.command()
-async def ping(ctx: commands.Context):
+async def ping(ctx):
 
-    await ctx.send("Pong!")
+    await ctx.send(
+        "Pong!"
+    )
 
 
 # =========================================================
@@ -318,25 +849,33 @@ async def ping(ctx: commands.Context):
 # =========================================================
 
 @bot.command()
-async def location(ctx: commands.Context):
+async def location(ctx):
 
     user_id = ctx.author.id
 
-    current_location = get_player_location(user_id)
+    current_location = get_player_location(
+        user_id
+    )
+
+    # =====================================================
+    # ESTABLISH INITIAL LOCATION
+    # =====================================================
 
     if current_location is None:
 
-        if ctx.channel.name not in LOCATIONS:
+        current_location = get_location_from_channel(
+            ctx.channel
+        )
+
+        if current_location is None:
 
             await ctx.send(
                 "📍 **LOCATION UNKNOWN**\n\n"
-                "This channel has not been registered "
-                "as an Èko location."
+                "This is not a registered "
+                "transportation location."
             )
 
             return
-
-        current_location = ctx.channel.name
 
         set_player_location(
             user_id,
@@ -345,9 +884,13 @@ async def location(ctx: commands.Context):
 
         if user_id not in player_vehicles:
 
-            create_vehicle(user_id)
+            create_vehicle(
+                user_id
+            )
 
-        vehicle = get_vehicle(user_id)
+        vehicle = get_vehicle(
+            user_id
+        )
 
         if vehicle[3] is None:
 
@@ -362,25 +905,42 @@ async def location(ctx: commands.Context):
             current_location
         )
 
-    vehicle = get_vehicle(user_id)
+    vehicle = get_vehicle(
+        user_id
+    )
 
     if vehicle is None:
 
-        create_vehicle(user_id)
+        create_vehicle(
+            user_id
+        )
 
-        vehicle = get_vehicle(user_id)
+        vehicle = get_vehicle(
+            user_id
+        )
 
     vehicle_location = vehicle[3]
+
+    current_data = LOCATIONS[
+        current_location
+    ]
+
+    vehicle_data = LOCATIONS.get(
+        vehicle_location
+    )
 
     await ctx.send(
         "📍 **YOUR CURRENT LOCATION**\n"
         "════════════════════\n\n"
 
         f"👤 Player Location:\n"
-        f"**{LOCATIONS.get(current_location, 'Unknown')}**\n\n"
+        f"**{current_data['display_name']}**\n\n"
+
+        f"🗺️ Zone:\n"
+        f"**{current_data['zone'].title()}**\n\n"
 
         f"🚗 Vehicle Location:\n"
-        f"**{LOCATIONS.get(vehicle_location, 'Unknown')}**\n\n"
+        f"**{vehicle_data['display_name'] if vehicle_data else 'Unknown'}**\n\n"
 
         "════════════════════"
     )
@@ -391,22 +951,83 @@ async def location(ctx: commands.Context):
 # =========================================================
 
 @bot.command()
-async def route(ctx: commands.Context):
+async def route(ctx):
+
+    user_id = ctx.author.id
+
+    current_location = get_player_location(
+        user_id
+    )
+
+    if current_location is None:
+
+        current_location = get_location_from_channel(
+            ctx.channel
+        )
+
+        if current_location is None:
+
+            await ctx.send(
+                "📍 **LOCATION UNKNOWN**\n\n"
+                "Use `!location` first."
+            )
+
+            return
+
+        set_player_location(
+            user_id,
+            current_location
+        )
+
+    destinations = get_direct_destinations(
+        current_location
+    )
+
+    current_data = LOCATIONS[
+        current_location
+    ]
+
+    if not destinations:
+
+        await ctx.send(
+            "🗺️ **NO DIRECT ROUTES**\n\n"
+            f"Current location:\n"
+            f"**{current_data['display_name']}**"
+        )
+
+        return
+
+    lines = []
+
+    for destination in destinations:
+
+        destination_data = LOCATIONS[
+            destination
+        ]
+
+        distance = calculate_distance(
+            current_location,
+            destination
+        )
+
+        lines.append(
+            f"• `{destination}` — "
+            f"{destination_data['display_name']} "
+            f"— **{distance:.1f} km**"
+        )
 
     await ctx.send(
-        "🗺️ **ÈKO TRANSPORT ROUTES**\n"
+        "🗺️ **AVAILABLE DIRECT ROUTES**\n"
         "════════════════════\n\n"
 
-        "🛂 **Immigration Office**\n"
-        "🟢 **Èko Green Zone**\n"
-        "🏛️ **Mayor's Penthouse**\n"
-        "🏠 **Deputy's Residence**\n"
-        "🏦 **Banking Hall**\n"
-        "🌍 **Mainland**\n"
-        "⛽ **Èko Oil & Gas**\n\n"
+        f"📍 From:\n"
+        f"**{current_data['display_name']}**\n\n"
 
-        "Use `!drive <destination>` "
-        "to travel.\n\n"
+        + "\n".join(lines)
+
+        + "\n\n"
+        "Use:\n"
+        "`!drive <code-name>`\n\n"
 
         "════════════════════"
     )
@@ -417,9 +1038,13 @@ async def route(ctx: commands.Context):
 # =========================================================
 
 @bot.command()
-async def drive(ctx: commands.Context, destination=None):
+async def drive(ctx, destination=None):
 
     user_id = ctx.author.id
+
+    # =====================================================
+    # DESTINATION REQUIRED
+    # =====================================================
 
     if destination is None:
 
@@ -427,80 +1052,113 @@ async def drive(ctx: commands.Context, destination=None):
             "🚗 **DRIVE**\n\n"
             "Please provide a destination.\n\n"
             "Example:\n"
-            "`!drive mainland`"
+            "`!drive bank`"
         )
 
         return
 
-    destination = destination.lower()
+    # =====================================================
+    # RESOLVE DESTINATION
+    # =====================================================
 
-    if destination not in LOCATIONS:
+    destination = resolve_location(
+        destination
+    )
+
+    if destination is None:
 
         await ctx.send(
             "❌ **DESTINATION NOT FOUND**\n\n"
-            f"`{destination}` is not a registered Èko location."
+            "Use `!route` to see your "
+            "available destinations."
         )
 
         return
 
-    current_location = get_player_location(user_id)
+    # =====================================================
+    # GET CURRENT LOCATION
+    # =====================================================
+
+    current_location = get_player_location(
+        user_id
+    )
 
     if current_location is None:
 
-        if ctx.channel.name in LOCATIONS:
+        current_location = get_location_from_channel(
+            ctx.channel
+        )
 
-            current_location = ctx.channel.name
-
-            set_player_location(
-                user_id,
-                current_location
-            )
-
-        else:
+        if current_location is None:
 
             await ctx.send(
-                "📍 I don't know your current location yet."
+                "📍 **LOCATION UNKNOWN**\n\n"
+                "I cannot determine your "
+                "current location."
             )
 
             return
+
+        set_player_location(
+            user_id,
+            current_location
+        )
+
+    # =====================================================
+    # ALREADY THERE
+    # =====================================================
 
     if current_location == destination:
 
         await ctx.send(
             f"📍 You are already at "
-            f"{LOCATIONS[destination]}."
+            f"**{LOCATIONS[destination]['display_name']}**."
         )
 
         return
 
-    route_key = (
+    # =====================================================
+    # DIRECT ROUTE CHECK
+    # =====================================================
+
+    if not is_direct_route(
         current_location,
         destination
-    )
-
-    if route_key not in ROUTES:
+    ):
 
         await ctx.send(
-            "🚧 **NO DIRECT ROUTE**\n\n"
-            f"There is currently no direct route from "
-            f"{LOCATIONS[current_location]} "
-            f"to {LOCATIONS[destination]}."
+            "🚧 **NO DIRECT ROUTE**\n"
+            "════════════════════\n\n"
+
+            f"📍 From:\n"
+            f"**{LOCATIONS[current_location]['display_name']}**\n\n"
+
+            f"📍 To:\n"
+            f"**{LOCATIONS[destination]['display_name']}**\n\n"
+
+            "You must first travel to the "
+            "appropriate access location."
         )
 
         return
 
-    route_data = ROUTES[route_key]
+    # =====================================================
+    # VEHICLE
+    # =====================================================
 
-    distance = route_data["distance"]
-    travel_time = route_data["time"]
-
-    vehicle = get_vehicle(user_id)
+    vehicle = get_vehicle(
+        user_id
+    )
 
     if vehicle is None:
 
-        create_vehicle(user_id)
+        create_vehicle(
+            user_id
+        )
 
-        vehicle = get_vehicle(user_id)
+        vehicle = get_vehicle(
+            user_id
+        )
 
     (
         vehicle_name,
@@ -509,7 +1167,10 @@ async def drive(ctx: commands.Context, destination=None):
         vehicle_location
     ) = vehicle
 
-    # Player and vehicle must be at the same location.
+    # =====================================================
+    # VEHICLE MUST BE WITH PLAYER
+    # =====================================================
+
     if vehicle_location is None:
 
         update_vehicle_location(
@@ -526,32 +1187,53 @@ async def drive(ctx: commands.Context, destination=None):
             "════════════════════\n\n"
 
             f"👤 Player location:\n"
-            f"**{LOCATIONS.get(current_location, 'Unknown')}**\n\n"
+            f"**{LOCATIONS[current_location]['display_name']}**\n\n"
 
             f"🚗 Vehicle location:\n"
-            f"**{LOCATIONS.get(vehicle_location, 'Unknown')}**\n\n"
+            f"**{LOCATIONS.get(vehicle_location, {}).get('display_name', 'Unknown')}**\n\n"
 
-            "Your vehicle must be at your current "
-            "location before you can drive it."
+            "Your vehicle must be at your "
+            "current location."
         )
 
         return
 
-    fuel_used = distance * FUEL_CONSUMPTION
+    # =====================================================
+    # DISTANCE
+    # =====================================================
+
+    distance = calculate_distance(
+        current_location,
+        destination
+    )
+
+    # =====================================================
+    # FUEL
+    # =====================================================
+
+    fuel_used = (
+        distance *
+        FUEL_CONSUMPTION
+    )
 
     if current_fuel < fuel_used:
 
         await ctx.send(
             "⛽ **NOT ENOUGH FUEL**\n\n"
+
             f"🚗 Vehicle: **{vehicle_name}**\n"
             f"⛽ Current fuel: **{current_fuel:.1f}L**\n"
-            f"⛽ Required fuel: **{fuel_used:.1f}L**\n\n"
+            f"⛽ Required: **{fuel_used:.1f}L**\n\n"
+
             "Please refuel before travelling."
         )
 
         return
 
-    remaining_fuel = current_fuel - fuel_used
+    remaining_fuel = (
+        current_fuel -
+        fuel_used
+    )
 
     update_fuel(
         user_id,
@@ -559,28 +1241,62 @@ async def drive(ctx: commands.Context, destination=None):
     )
 
     # =====================================================
-    # LOCK ALL OTHER LOCATION CHANNELS FOR THIS PLAYER
-    # PLAYER CAN SEE THEM BUT CANNOT TYPE.
+    # TRAVEL TIME
+    #
+    # Distance remains real.
+    # Time is compressed for testing.
+    # =====================================================
+
+    travel_time = (
+        distance *
+        TIME_PER_KM
+    )
+
+    travel_time = max(
+        MIN_TRAVEL_TIME,
+        min(
+            MAX_TRAVEL_TIME,
+            round(travel_time)
+        )
+    )
+
+    # =====================================================
+    # IMPORTANT:
+    #
+    # THE MOMENT THE JOURNEY STARTS,
+    # ALL LOCATION CHANNELS BECOME READ-ONLY.
+    #
+    # current_location = None
     # =====================================================
 
     await update_location_permissions(
         ctx.guild,
         ctx.author,
-        destination
+        None
     )
+
+    # =====================================================
+    # JOURNEY MESSAGE
+    # =====================================================
 
     departure_message = await ctx.send(
         "🚗 **JOURNEY STARTED**\n"
         "════════════════════\n\n"
 
-        f"📍 From: **{LOCATIONS[current_location]}**\n"
-        f"📍 To: **{LOCATIONS[destination]}**\n\n"
+        f"📍 From:\n"
+        f"**{LOCATIONS[current_location]['display_name']}**\n\n"
+
+        f"📍 To:\n"
+        f"**{LOCATIONS[destination]['display_name']}**\n\n"
 
         f"🚗 Vehicle: **{vehicle_name}**\n"
-        f"🛣️ Distance: **{distance} km**\n"
+        f"🛣️ Distance: **{distance:.1f} km**\n"
         f"⛽ Fuel used: **{fuel_used:.1f}L**\n"
         f"⛽ Remaining fuel: **{remaining_fuel:.1f}L**\n"
         f"⏱️ Travel Time: **{travel_time} seconds**\n\n"
+
+        "🔒 All location channels are locked "
+        "while you are travelling.\n\n"
 
         "🚗 You are now travelling..."
     )
@@ -591,10 +1307,16 @@ async def drive(ctx: commands.Context, destination=None):
         )
     )
 
-    await asyncio.sleep(travel_time)
+    # =====================================================
+    # TRAVEL
+    # =====================================================
+
+    await asyncio.sleep(
+        travel_time
+    )
 
     # =====================================================
-    # UPDATE PLAYER + VEHICLE LOCATION AFTER ARRIVAL
+    # ARRIVAL
     # =====================================================
 
     set_player_location(
@@ -607,8 +1329,10 @@ async def drive(ctx: commands.Context, destination=None):
         destination
     )
 
-    # Destination remains the ONLY location channel
-    # where the player can type.
+    # =====================================================
+    # UNLOCK ONLY DESTINATION
+    # =====================================================
+
     await update_location_permissions(
         ctx.guild,
         ctx.author,
@@ -624,26 +1348,36 @@ async def drive(ctx: commands.Context, destination=None):
 
         await ctx.send(
             "⚠️ **ARRIVAL CHANNEL NOT FOUND**\n\n"
-            f"I could not find `#{destination}`.\n\n"
-            "Your player and vehicle locations "
-            "have still been updated."
+
+            f"Your location has been updated to "
+            f"**{LOCATIONS[destination]['display_name']}**, "
+            "but the Discord channel could not be found."
         )
 
         return
+
+    # =====================================================
+    # ARRIVAL MESSAGE
+    # =====================================================
 
     await destination_channel.send(
         "✅ **ARRIVAL CONFIRMED**\n"
         "════════════════════\n\n"
 
         f"🚗 {ctx.author.mention} has arrived at:\n\n"
-        f"**{LOCATIONS[destination]}**\n\n"
 
-        f"⛽ Fuel remaining: **{remaining_fuel:.1f}L**\n\n"
+        f"**{LOCATIONS[destination]['display_name']}**\n\n"
 
-        "👤 Player location: **Updated**\n"
-        "🚗 Vehicle location: **Updated**\n\n"
+        f"🛣️ Distance travelled: "
+        f"**{distance:.1f} km**\n"
 
-        "📍 Your current location has been updated."
+        f"⛽ Fuel remaining: "
+        f"**{remaining_fuel:.1f}L**\n\n"
+
+        "🔓 This location is now unlocked for you.\n"
+        "💬 You can now interact with this channel.\n\n"
+
+        "════════════════════"
     )
 
 
@@ -652,39 +1386,46 @@ async def drive(ctx: commands.Context, destination=None):
 # =========================================================
 
 @bot.command()
-async def vehicle(ctx: commands.Context):
+async def vehicle(ctx):
 
     user_id = ctx.author.id
 
-    current_location = get_player_location(user_id)
+    current_location = get_player_location(
+        user_id
+    )
 
     if current_location is None:
 
-        if ctx.channel.name in LOCATIONS:
+        current_location = get_location_from_channel(
+            ctx.channel
+        )
 
-            current_location = ctx.channel.name
-
-            set_player_location(
-                user_id,
-                current_location
-            )
-
-        else:
+        if current_location is None:
 
             await ctx.send(
-                "📍 **LOCATION UNKNOWN**\n\n"
-                "Your current game location has not been established."
+                "📍 **LOCATION UNKNOWN**"
             )
 
             return
 
-    vehicle_data = get_vehicle(user_id)
+        set_player_location(
+            user_id,
+            current_location
+        )
+
+    vehicle_data = get_vehicle(
+        user_id
+    )
 
     if vehicle_data is None:
 
-        create_vehicle(user_id)
+        create_vehicle(
+            user_id
+        )
 
-        vehicle_data = get_vehicle(user_id)
+        vehicle_data = get_vehicle(
+            user_id
+        )
 
     (
         vehicle_name,
@@ -692,6 +1433,14 @@ async def vehicle(ctx: commands.Context):
         fuel_capacity,
         vehicle_location
     ) = vehicle_data
+
+    current_data = LOCATIONS[
+        current_location
+    ]
+
+    vehicle_location_data = LOCATIONS.get(
+        vehicle_location
+    )
 
     await ctx.send(
         "🚘 **YOUR VEHICLE**\n"
@@ -701,10 +1450,10 @@ async def vehicle(ctx: commands.Context):
         f"⛽ Fuel: **{fuel:.1f}L / {fuel_capacity:.1f}L**\n\n"
 
         f"👤 Player Location:\n"
-        f"**{LOCATIONS.get(current_location, 'Unknown')}**\n\n"
+        f"**{current_data['display_name']}**\n\n"
 
         f"🚗 Vehicle Location:\n"
-        f"**{LOCATIONS.get(vehicle_location, 'Unknown')}**\n\n"
+        f"**{vehicle_location_data['display_name'] if vehicle_location_data else 'Unknown'}**\n\n"
 
         "🅿️ Status: **Parked**\n\n"
 
@@ -717,32 +1466,36 @@ async def vehicle(ctx: commands.Context):
 # =========================================================
 
 @bot.command()
-async def refuel(ctx: commands.Context, confirmation=None):
+async def refuel(ctx, confirmation=None):
 
     user_id = ctx.author.id
 
-    player_location = get_player_location(user_id)
+    player_location = get_player_location(
+        user_id
+    )
 
     if player_location is None:
 
         await ctx.send(
-            "📍 **REFUEL FAILED**\n"
-            "════════════════════\n\n"
-
-            "Your current player location is unknown.\n\n"
-
+            "📍 **REFUEL FAILED**\n\n"
             "Use `!location` first."
         )
 
         return
 
-    vehicle = get_vehicle(user_id)
+    vehicle = get_vehicle(
+        user_id
+    )
 
     if vehicle is None:
 
-        create_vehicle(user_id)
+        create_vehicle(
+            user_id
+        )
 
-        vehicle = get_vehicle(user_id)
+        vehicle = get_vehicle(
+            user_id
+        )
 
     (
         vehicle_name,
@@ -751,49 +1504,44 @@ async def refuel(ctx: commands.Context, confirmation=None):
         vehicle_location
     ) = vehicle
 
-    # BOTH PLAYER AND VEHICLE MUST BE AT THE STATION.
-    if player_location != "èko-oil-and-gas":
+    # =====================================================
+    # PLAYER MUST BE AT FUEL STATION
+    # =====================================================
+
+    if player_location != "fuel-station":
 
         await ctx.send(
-            "⛽ **REFUEL FAILED**\n"
-            "════════════════════\n\n"
+            "⛽ **REFUEL FAILED**\n\n"
 
-            "You must be at **Èko Oil & Gas** "
-            "to refuel your vehicle.\n\n"
-
-            f"👤 Your location:\n"
-            f"**{LOCATIONS.get(player_location, 'Unknown')}**\n\n"
-
-            "Required location:\n"
-            "**⛽ Èko Oil & Gas**"
+            "You must be at the **Fuel Station** "
+            "to refuel."
         )
 
         return
 
-    if vehicle_location != "èko-oil-and-gas":
+      # =====================================================
+    # VEHICLE MUST BE THERE
+    # =====================================================
+
+    if vehicle_location != "fuel-station":
 
         await ctx.send(
-            "⛽ **REFUEL FAILED**\n"
-            "════════════════════\n\n"
+            "⛽ **REFUEL FAILED**\n\n"
 
-            "Your vehicle is not at **Èko Oil & Gas**.\n\n"
-
-            f"👤 Player location:\n"
-            f"**{LOCATIONS.get(player_location, 'Unknown')}**\n\n"
-
-            f"🚗 Vehicle location:\n"
-            f"**{LOCATIONS.get(vehicle_location, 'Unknown')}**\n\n"
-
-            "Both you and your vehicle must be at "
-            "**⛽ Èko Oil & Gas** to refuel."
+            "Your vehicle is not at the Fuel Station."
         )
 
         return
+
+    # =====================================================
+    # FULL TANK
+    # =====================================================
 
     if current_fuel >= fuel_capacity:
 
         await ctx.send(
             "⛽ **TANK ALREADY FULL**\n\n"
+
             f"🚗 Vehicle: **{vehicle_name}**\n"
             f"⛽ Fuel: **{current_fuel:.1f}L / "
             f"{fuel_capacity:.1f}L**"
@@ -801,11 +1549,23 @@ async def refuel(ctx: commands.Context, confirmation=None):
 
         return
 
-    fuel_needed = fuel_capacity - current_fuel
+    # =====================================================
+    # COST
+    # =====================================================
 
-    total_cost = fuel_needed * FUEL_PRICE
+    fuel_needed = (
+        fuel_capacity -
+        current_fuel
+    )
 
-    balance = get_balance(user_id)
+    total_cost = (
+        fuel_needed *
+        FUEL_PRICE
+    )
+
+    balance = get_balance(
+        user_id
+    )
 
     if confirmation != "confirm":
 
@@ -813,24 +1573,24 @@ async def refuel(ctx: commands.Context, confirmation=None):
             "⛽ **REFUEL REQUEST**\n"
             "════════════════════\n\n"
 
-            f"🚗 Vehicle: **{vehicle_name}**\n\n"
+            f"🚗 Vehicle: **{vehicle_name}**\n"
 
-            f"👤 Player location:\n"
-            f"**{LOCATIONS[player_location]}**\n\n"
+            f"⛽ Current fuel: "
+            f"**{current_fuel:.1f}L**\n"
 
-            f"🚗 Vehicle location:\n"
-            f"**{LOCATIONS[vehicle_location]}**\n\n"
+            f"⛽ Required: "
+            f"**{fuel_needed:.1f}L**\n"
 
-            f"⛽ Current fuel: **{current_fuel:.1f}L**\n"
-            f"⛽ Capacity: **{fuel_capacity:.1f}L**\n"
-            f"⛽ Required: **{fuel_needed:.1f}L**\n\n"
+            f"💵 Price: "
+            f"**₦{FUEL_PRICE:,.0f}/L**\n"
 
-            f"💵 Fuel price: **₦{FUEL_PRICE:,.0f}/L**\n"
-            f"💰 Total cost: **₦{total_cost:,.0f}**\n\n"
+            f"💰 Total: "
+            f"**₦{total_cost:,.0f}**\n\n"
 
-            f"💳 Balance: **₦{balance:,.0f}**\n\n"
+            f"💳 Balance: "
+            f"**₦{balance:,.0f}**\n\n"
 
-            "To confirm, use:\n"
+            "Confirm with:\n"
             "`!refuel confirm`\n\n"
 
             "════════════════════"
@@ -838,21 +1598,29 @@ async def refuel(ctx: commands.Context, confirmation=None):
 
         return
 
+    # =====================================================
+    # BALANCE CHECK
+    # =====================================================
+
     if balance < total_cost:
 
         await ctx.send(
-            "❌ **INSUFFICIENT FUNDS**\n"
-            "════════════════════\n\n"
+            "❌ **INSUFFICIENT FUNDS**\n\n"
 
-            f"💰 Required: **₦{total_cost:,.0f}**\n"
-            f"💳 Your balance: **₦{balance:,.0f}**\n\n"
-
-            "You cannot afford this refuel."
+            f"Required: **₦{total_cost:,.0f}**\n"
+            f"Balance: **₦{balance:,.0f}**"
         )
 
         return
 
-    new_balance = balance - total_cost
+    # =====================================================
+    # PAYMENT
+    # =====================================================
+
+    new_balance = (
+        balance -
+        total_cost
+    )
 
     update_balance(
         user_id,
@@ -870,19 +1638,21 @@ async def refuel(ctx: commands.Context, confirmation=None):
 
         f"🚗 Vehicle: **{vehicle_name}**\n\n"
 
-        f"👤 Player location:\n"
-        f"**{LOCATIONS[player_location]}**\n\n"
+        f"⛽ Previous fuel: "
+        f"**{current_fuel:.1f}L**\n"
 
-        f"🚗 Vehicle location:\n"
-        f"**{LOCATIONS[vehicle_location]}**\n\n"
+        f"⛽ Added: "
+        f"**{fuel_needed:.1f}L**\n"
 
-        f"⛽ Previous fuel: **{current_fuel:.1f}L**\n"
-        f"⛽ Added: **{fuel_needed:.1f}L**\n"
-        f"⛽ Current fuel: **{fuel_capacity:.1f}L / "
+        f"⛽ Current fuel: "
+        f"**{fuel_capacity:.1f}L / "
         f"{fuel_capacity:.1f}L**\n\n"
 
-        f"💰 Paid: **₦{total_cost:,.0f}**\n"
-        f"💳 Remaining balance: **₦{new_balance:,.0f}**\n\n"
+        f"💰 Paid: "
+        f"**₦{total_cost:,.0f}**\n"
+
+        f"💳 Remaining balance: "
+        f"**₦{new_balance:,.0f}**\n\n"
 
         "════════════════════"
     )
@@ -893,20 +1663,22 @@ async def refuel(ctx: commands.Context, confirmation=None):
 # =========================================================
 
 @bot.command()
-async def balance(ctx: commands.Context):
+async def balance(ctx):
 
     user_id = ctx.author.id
 
-    current_balance = get_balance(user_id)
+    current_balance = get_balance(
+        user_id
+    )
 
     await ctx.send(
-        "💳 **TEST TRANSPORT BALANCE**\n"
+        "💳 **TRANSPORT BALANCE**\n"
         "════════════════════\n\n"
 
         f"💰 Balance: **₦{current_balance:,.0f}**\n\n"
 
-        "This is a temporary Transport Bot balance.\n"
-        "It is NOT connected to the actual Èko economy.\n\n"
+        "This is currently a temporary "
+        "transport balance.\n\n"
 
         "════════════════════"
     )
@@ -917,10 +1689,7 @@ async def balance(ctx: commands.Context):
 # =========================================================
 
 @vehicle.error
-async def vehicle_error(
-    ctx: commands.Context,
-    error
-):
+async def vehicle_error(ctx, error):
 
     await ctx.send(
         f"❌ Vehicle error: `{error}`"
